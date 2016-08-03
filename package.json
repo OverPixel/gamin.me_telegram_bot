@@ -1,0 +1,13 @@
+{
+  "name": "gamin_bot",
+  "version": "1.0.0",
+  "description": "gamin.me bot for telegram",
+  "main": "app.js",
+  "author": "OverPixel",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.14.0",
+    "telegram-node-bot": "^3.0.10",
+    "yql": "^1.0.2"
+  }
+}
