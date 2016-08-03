@@ -21,9 +21,26 @@ const fs = require('fs');
 var app = express();
 
 var latest_data = {};
+var already_sent = {};
 var list_of_chats = {};
 var minutes = 2, the_interval = minutes * 60 * 1000;
 var get_data_type = 'article';
+
+var check_for_file_exist = function(file_path) {
+    fs.stat(file_path, function(err, stat) {
+        if(err == null) {
+            //console.log('File exists');
+        } else if(err.code == 'ENOENT') {
+            // file does not exist
+            fs.writeFile(file_path, '');
+        } else {
+            console.log('Some other error: ', err.code);
+        }
+    });
+}
+
+check_for_file_exist('data/list_of_chats.txt');
+check_for_file_exist('data/latest_data.txt');
 
 fs.readFile('data/list_of_chats.txt', (err, data) => {
   if (err) throw err;
@@ -36,6 +53,11 @@ fs.readFile('data/latest_data.txt', (err, data) => {
   if (err) throw err;
   if (data.length != 0) {
       latest_data = JSON.parse(data);
+  }
+  else {
+      latest_data['article'] = [];
+      latest_data['micro'] = [];
+      latest_data['game_db'] = [];
   }
   setInterval(function() {
             get_data();
@@ -54,31 +76,44 @@ var get_data = function() {
         query_string = 'SELECT * FROM html WHERE (url="http://gamin.me/games?show=no_posts" and xpath="//article")';
     }
     new YQL.exec(query_string, function(response) {
-	if (response.error) {
+    if (response.error) {
             console.log("Example #1... Error: " + response.error.description);
-	}
-	else {
+    }
+    else {
             if (response.query.results) {
                 find_new_data(response.query.results.article,get_data_type);
                 if (get_data_type == 'article') {get_data_type = 'micro';}
                 else if (get_data_type == 'micro') {get_data_type = 'game_db';}
                 else if (get_data_type == 'game_db') {get_data_type = 'article';}
             }
-	}
+    }
     });
 };
 
 var find_new_data = function(raw_arr,data_type) {
-    if (!latest_data[data_type] || latest_data[data_type].toString() != raw_arr[0].id.toString()) {
-        latest_data[data_type] = raw_arr[0].id.toString();
+    var is_repeat = check_for_repeat(raw_arr,data_type);
+    if (!is_repeat) {
         fs.writeFile('data/latest_data.txt', JSON.stringify(latest_data));
         send_new_message_to_all(data_type);
     }
 };
 
+var check_for_repeat = function (raw_arr,data_type) {
+    if (latest_data[data_type].length > 0) {
+        for (var i = 0; i < latest_data[data_type].length; i++) {
+            if (latest_data[data_type][i].toString() == raw_arr[0].id.toString()) {return true;}
+        }
+    }
+    latest_data[data_type].unshift(raw_arr[0].id.toString());
+    if (latest_data[data_type].length > 10) {
+        latest_data[data_type].splice(-1,1);
+    }
+    return false;
+}
+
 var send_new_message_to_all = function(type) {
     var message = "empty";
-    var latest_id = latest_data[type].split('_')[1];
+    var latest_id = latest_data[type][0].split('_')[1];
     if (type == 'article') {
         message = "Новая статья на Гамине. Ура!: gamin.me/posts/"+latest_id;
     }
@@ -136,9 +171,11 @@ class StartController extends TelegramBaseController {
                 if (list_of_chats.length == 25) {
                     send_event_to_admin('CHAT LIST FULL!!!');
                 }
-                var latest_id = latest_data['article'].split('_')[1];
-                $.sendMessage("Вот последний пост из базы:");
-                $.sendMessage("gamin.me/posts/"+latest_id);
+                if (latest_data['article'].length > 0) {
+                    var latest_id = latest_data['article'][0].split('_')[1];
+                    $.sendMessage("Вот последний пост из базы:");
+                    $.sendMessage("gamin.me/posts/"+latest_id);
+                } 
             } 
         }
         else {
